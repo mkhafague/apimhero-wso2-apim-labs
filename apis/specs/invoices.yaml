@@ -1,0 +1,309 @@
+openapi: 3.0.3
+info:
+  title: Invoices API
+  version: 1.0.0
+  description: |
+    First business API of Cordelia Assurances ("WSO2 API Management: The Mission" training course).
+    Invoices from partner healthcare providers — 100% fictional data, no policyholder data
+    (DPO requirement: amounts and statuses are enough for the use case).
+
+    Backend: apps/invoices (Node.js, dependency-free). Security is enforced by the
+    WSO2 gateway: OAuth 2 with invoices:read / invoices:write scopes, API Key for reads.
+
+    Note: invoice type codes (optique, dentaire, pharmacie, kinesitherapie) are part of
+    the wire contract shared with French internal systems — they are not translated.
+  contact:
+    name: WSO2 APIM Training — The Mission
+  license:
+    name: MIT
+
+servers:
+  - url: https://localhost:8243/invoices/1.0.0
+    description: Lab WSO2 gateway (invoices context)
+  - url: http://localhost:8082
+    description: Direct backend access (diagnostics only)
+
+security:
+  - OAuth2: [invoices:read]
+
+tags:
+  - name: invoices
+    description: Invoices from partner healthcare providers
+
+paths:
+  /invoices:
+    get:
+      tags: [invoices]
+      operationId: listInvoices
+      summary: List invoices
+      security:
+        - OAuth2: [invoices:read]
+        - ApiKeyAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by status
+          schema:
+            type: string
+            enum: [SUBMITTED, APPROVED, PAID, REJECTED]
+          example: SUBMITTED
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of invoices (filtered when applicable)
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invoice'
+              example:
+                - { id: 1001, provider: Optique Bellecour, type: optique, amountCents: 24900, currency: EUR, status: PAID, submittedAt: '2026-06-02T09:14:00Z' }
+                - { id: 1004, provider: Optique Bellecour, type: optique, amountCents: 15800, currency: EUR, status: SUBMITTED, submittedAt: '2026-07-01T10:47:00Z' }
+        '400':
+          description: Invalid status filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_FILTER
+                message: "Query parameter 'status' must be one of: SUBMITTED, APPROVED, PAID, REJECTED."
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      tags: [invoices]
+      operationId: createInvoice
+      summary: Submit an invoice
+      description: Requires the invoices:write scope — a read-only partner gets 403.
+      security:
+        - OAuth2: [invoices:write]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewInvoice'
+            example: { provider: Optique Bellecour, type: optique, amountCents: 19900 }
+      responses:
+        '201':
+          description: Invoice created with status SUBMITTED
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+              example: { id: 1007, provider: Optique Bellecour, type: optique, amountCents: 19900, currency: EUR, status: SUBMITTED, submittedAt: '2026-07-15T16:03:00Z' }
+        '400':
+          description: Invalid request body (unreadable JSON, missing field, unknown type, non-positive amount)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_PAYLOAD
+                message: "Field 'type' must be one of: optique, dentaire, pharmacie, kinesitherapie."
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /invoices/{invoiceId}:
+    get:
+      tags: [invoices]
+      operationId: getInvoiceById
+      summary: Get an invoice
+      security:
+        - OAuth2: [invoices:read]
+        - ApiKeyAuth: []
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          description: Numeric identifier of the invoice
+          schema:
+            type: integer
+            minimum: 1
+          example: 1001
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The requested invoice
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '404':
+          description: No invoice with this identifier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVOICE_NOT_FOUND
+                message: No invoice with id 9999.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /health:
+    get:
+      tags: [invoices]
+      operationId: healthCheck
+      summary: Backend health status
+      description: Never affected by the simulated "GestPrest" failure — availability probe.
+      security: []
+      responses:
+        '200':
+          description: The service responds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: UP }
+                  service: { type: string, example: invoices }
+
+components:
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: >
+        Correlation identifier provided by the caller (generated by the backend if absent,
+        always returned in the response and logged end to end).
+      schema:
+        type: string
+        example: test-abc-123
+
+  headers:
+    CorrelationId:
+      description: Correlation identifier of the request (propagated or generated)
+      schema:
+        type: string
+
+  schemas:
+    Invoice:
+      type: object
+      required: [id, provider, type, amountCents, currency, status, submittedAt]
+      properties:
+        id:
+          type: integer
+          example: 1001
+        provider:
+          type: string
+          description: Legal name of the healthcare provider (fictional)
+          example: Optique Bellecour
+        type:
+          type: string
+          description: Invoice type code (wire contract — kept in French)
+          enum: [optique, dentaire, pharmacie, kinesitherapie]
+          example: optique
+        amountCents:
+          type: integer
+          description: Amount in euro cents
+          example: 24900
+        currency:
+          type: string
+          example: EUR
+        status:
+          type: string
+          enum: [SUBMITTED, APPROVED, PAID, REJECTED]
+          example: PAID
+        submittedAt:
+          type: string
+          format: date-time
+          example: '2026-06-02T09:14:00Z'
+
+    NewInvoice:
+      type: object
+      required: [provider, type, amountCents]
+      properties:
+        provider:
+          type: string
+          minLength: 1
+          example: Optique Bellecour
+        type:
+          type: string
+          enum: [optique, dentaire, pharmacie, kinesitherapie]
+          example: optique
+        amountCents:
+          type: integer
+          minimum: 1
+          example: 19900
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable application error code
+          example: INVOICE_NOT_FOUND
+        message:
+          type: string
+          example: No invoice with id 9999.
+        correlationId:
+          type: string
+          example: b423eab5-3165-455f-8b09-5c2ab8197430
+
+  responses:
+    Unauthorized:
+      description: Authentication missing, invalid or expired (issued by the gateway)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: UNAUTHORIZED, message: Missing or expired access token. }
+    Forbidden:
+      description: Missing scope — e.g. a write with an invoices:read token (issued by the gateway)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: FORBIDDEN, message: The access token does not allow access to this resource. }
+    TooManyRequests:
+      description: Plan rate limit reached (issued by the gateway)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: THROTTLED_OUT, message: Message throttled out. Retry later. }
+    ServerError:
+      description: Internal backend error (e.g. the simulated GestPrest dependency failure)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: { code: DEPENDENCY_UNAVAILABLE, message: Upstream system 'GestPrest' is not responding (simulated for training). }
+
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      description: Client credentials flow — enforced by the WSO2 gateway
+      flows:
+        clientCredentials:
+          tokenUrl: https://localhost:9443/oauth2/token
+          scopes:
+            invoices:read: Read invoices
+            invoices:write: Submit or modify invoices
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: apikey
+      description: WSO2 API Key (read-only, lightweight use cases)

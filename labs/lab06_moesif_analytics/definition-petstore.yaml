@@ -1,0 +1,26 @@
+# Lab 6 - definition de l'API Petstore, lue par `apictl init --definition`.
+#
+# A n'utiliser QUE si vous n'avez pas le projet Petstore/ du lab 5 (partie C) : ce
+# fichier pose les valeurs que le lab 5 vous fait corriger a la main dans api.yaml
+# (nom, contexte, plans, backend, etat de cycle de vie). Avec le projet du lab 5,
+# reimportez-le tel quel.
+#
+#   apictl init Petstore --oas apis/specs/petstore.yaml --definition labs/lab06_moesif_analytics/definition-petstore.yaml --force=true
+type: api
+version: v4.7.0
+data:
+  name: Simple Petstore API
+  context: /petstore
+  version: 1.0.0
+  lifeCycleStatus: PUBLISHED
+  policies:
+    - Bronze
+    - Silver
+    - Gold
+    - Unlimited
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://petstore:8080
+    sandbox_endpoints:
+      url: http://petstore:8080

@@ -1,0 +1,71 @@
+# Example pipeline - m05_v04 (copy into .github/workflows/ of your own repository).
+# Secrets: APIM_DEV_URL, APIM_DEV_USER, APIM_DEV_PASSWORD (apictl login) and
+#   APIM_DEV_GATEWAY_URL, APIM_DEV_CONSUMER_KEY, APIM_DEV_CONSUMER_SECRET (API tests).
+# Variables: APICTL_DOWNLOAD_URL (apictl 4.7.x linux amd64 archive, from
+#   https://github.com/wso2/product-apim-tooling/releases), optional APIM_DRY_RUN.
+# A public GitHub runner cannot reach a local lab: use a self-hosted runner, or point
+# the secrets at your real environments. APIM_DRY_RUN=true runs only the steps that
+# need no platform (install apictl, check the project) and skips the rest.
+name: deploy-petstore
+on:                                   # 1 - trigger
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-24.04             # self-hosted runner: runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5    # 2 - preparation
+      - name: Install apictl
+        run: |
+          curl -fsSL -o apictl.tar.gz "${{ vars.APICTL_DOWNLOAD_URL }}"
+          tar -xzf apictl.tar.gz
+          echo "$PWD/apictl" >> "$GITHUB_PATH"
+      - name: Check the apictl project
+        run: |
+          apictl version
+          apictl bundle -s Petstore -d build
+      - name: Dry run - no platform reachable from the public runner
+        if: vars.APIM_DRY_RUN == 'true'
+        run: |
+          echo "::notice title=Dry run::No platform reachable from the public runner: login, deployment and API tests skipped."
+      - name: Deploy to dev          # 3 - login via secrets, 4 - deployment
+        if: vars.APIM_DRY_RUN != 'true'
+        run: |
+          apictl add env dev --apim "${{ secrets.APIM_DEV_URL }}"
+          apictl login dev -u "${{ secrets.APIM_DEV_USER }}" -p "${{ secrets.APIM_DEV_PASSWORD }}" -k
+          apictl import api -f Petstore -e dev --update --rotate-revision -k
+          # No change-status step: Petstore/api.yaml carries
+          # "lifeCycleStatus: PUBLISHED", and every import (--update included) puts
+          # the API in that state. Left at CREATED, each run would send the API back
+          # to CREATED, off the Dev Portal.
+      - name: Write the test environment file
+        if: vars.APIM_DRY_RUN != 'true'
+        env:                          # same format as apis/tests/env.gateway.json
+          GATEWAY_URL: ${{ secrets.APIM_DEV_GATEWAY_URL }}
+          APIM_URL: ${{ secrets.APIM_DEV_URL }}
+          CONSUMER_KEY: ${{ secrets.APIM_DEV_CONSUMER_KEY }}
+          CONSUMER_SECRET: ${{ secrets.APIM_DEV_CONSUMER_SECRET }}
+        run: |
+          cat > apis/tests/env.ci.json <<EOF
+          {
+            "baseUrl": "$GATEWAY_URL/petstore/1.0.0",
+            "insecure": true,
+            "auth": {
+              "tokenUrl": "$APIM_URL/oauth2/token",
+              "clientId": "$CONSUMER_KEY",
+              "clientSecret": "$CONSUMER_SECRET",
+              "scope": "petstore:read petstore:write"
+            }
+          }
+          EOF
+      - name: Quality gate (API tests)
+        if: vars.APIM_DRY_RUN != 'true'
+        run: |
+          node apis/tests/run-tests.mjs --env apis/tests/env.ci.json --suite petstore --report-json results.json
+      - name: Upload test report
+        if: always() && vars.APIM_DRY_RUN != 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: api-test-report
+          path: results.json

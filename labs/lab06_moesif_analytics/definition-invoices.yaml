@@ -1,0 +1,26 @@
+# Lab 6 - definition de l'API Invoices, lue par `apictl init --definition`.
+#
+# `apictl init --oas` seul pose des valeurs par defaut qui ne marchent pas sur la pile
+# du cours (releve sur apictl 4.7.2) : nom "InvoicesAPI", contexte /InvoicesAPI, plan
+# Unlimited seul, backend http://localhost:8080. Ce fichier pose les bonnes valeurs ;
+# le contrat (chemins, scopes invoices:read / invoices:write) vient toujours de
+# apis/specs/invoices.yaml.
+#
+#   apictl init Invoices --oas apis/specs/invoices.yaml --definition labs/lab06_moesif_analytics/definition-invoices.yaml --force=true
+type: api
+version: v4.7.0
+data:
+  name: Invoices API
+  context: /invoices
+  version: 1.0.0
+  policies:
+    - Bronze
+    - Silver
+    - Gold
+    - Unlimited
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://invoices:8080
+    sandbox_endpoints:
+      url: http://invoices:8080

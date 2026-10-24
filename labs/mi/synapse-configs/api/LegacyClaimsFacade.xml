@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Façade REST du legacy GestPrest — lab 9 (module 7, m07_v05).
+  Traduit le dialecte XML cryptique du legacy-mock en JSON moderne.
+
+  A VALIDER au premier demarrage du profil integration : cet artefact Synapse
+  suit la syntaxe documentee de WSO2 Micro Integrator, mais il n'a pas pu etre
+  execute dans l'environnement de preparation (pas de Docker). Verifiez :
+    docker compose [profil integration] up -d
+    curl http://localhost:8290/legacy/claims/1042
+  En cas d'ajustement necessaire, l'outillage officiel de developpement MI
+  (extension VS Code WSO2 Micro Integrator) permet d'editer et de tester.
+-->
+<api xmlns="http://ws.apache.org/ns/synapse" name="LegacyClaimsFacade" context="/legacy">
+  <resource methods="GET" uri-template="/claims/{claimId}">
+    <inSequence>
+      <!-- Appel du legacy dans son dialecte -->
+      <call>
+        <endpoint>
+          <http method="get" uri-template="http://legacy-mock:8080/GESTPREST/RMBT?id={uri.var.claimId}"/>
+        </endpoint>
+      </call>
+
+      <!-- CDRET 00 = dossier trouvé ; sinon = inconnu (le legacy répond toujours HTTP 200) -->
+      <filter xpath="//*[local-name()='CDRET'] = '00'">
+        <then>
+          <!-- Libellé de statut à partir du code CDETA (10/20/30/40) -->
+          <switch source="//*[local-name()='CDETA']">
+            <case regex="10">
+              <property name="claimStatus" value="SUBMITTED"/>
+            </case>
+            <case regex="20">
+              <property name="claimStatus" value="APPROVED"/>
+            </case>
+            <case regex="30">
+              <property name="claimStatus" value="PAID"/>
+            </case>
+            <case regex="40">
+              <property name="claimStatus" value="REJECTED"/>
+            </case>
+            <default>
+              <property name="claimStatus" value="UNKNOWN"/>
+            </default>
+          </switch>
+
+          <payloadFactory media-type="json">
+            <format>{"claimId": $1, "providerCode": "$2", "amountCents": $3, "status": "$4", "processedAt": "$5"}</format>
+            <args>
+              <arg evaluator="xml" expression="string(number(//*[local-name()='NUMRMB']))"/>
+              <arg evaluator="xml" expression="//*[local-name()='CDPS']"/>
+              <arg evaluator="xml" expression="string(number(//*[local-name()='MTRMB']))"/>
+              <arg evaluator="xml" expression="get-property('claimStatus')"/>
+              <arg evaluator="xml" expression="//*[local-name()='DTTRT']"/>
+            </args>
+          </payloadFactory>
+          <property name="messageType" value="application/json" scope="axis2"/>
+          <respond/>
+        </then>
+        <else>
+          <payloadFactory media-type="json">
+            <format>{"code": "CLAIM_NOT_FOUND", "message": "No claim with id $1 in GestPrest."}</format>
+            <args>
+              <arg evaluator="xml" expression="get-property('uri.var.claimId')"/>
+            </args>
+          </payloadFactory>
+          <property name="messageType" value="application/json" scope="axis2"/>
+          <property name="HTTP_SC" value="404" scope="axis2"/>
+          <respond/>
+        </else>
+      </filter>
+    </inSequence>
+    <faultSequence>
+      <payloadFactory media-type="json">
+        <format>{"code": "LEGACY_UNAVAILABLE", "message": "GestPrest did not respond."}</format>
+        <args/>
+      </payloadFactory>
+      <property name="messageType" value="application/json" scope="axis2"/>
+      <property name="HTTP_SC" value="502" scope="axis2"/>
+      <respond/>
+    </faultSequence>
+  </resource>
+</api>

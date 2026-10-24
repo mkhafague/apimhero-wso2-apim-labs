@@ -1,0 +1,105 @@
+# Configuration d'Identity Server 7.2.0 pour le lab 8 (labs/docker-compose.yml, profil iam,
+# service wso2is : monte en lecture seule a la place de repository/conf/deployment.toml).
+# C'est le fichier de l'image wso2/wso2is:7.2.0 tel quel, plus DEUX ajouts, en fin de
+# fichier, constates necessaires au tournage du 20/10/2026 :
+#   1. l'emetteur des jetons : sans proxyPort, IS signe ses jetons avec
+#      https://localhost:9443/oauth2/token, l'emetteur du Key Manager RESIDENT d'API
+#      Manager ; la passerelle attribue alors les jetons d'IS au resident ;
+#   2. les scopes : IS 7 n'accorde que les scopes de ressources d'API autorisees ; sans
+#      ces deux reglages, le jeton revient sans « invoices:read ».
+# Configuration de LAB : admin/admin, base H2 dans le conteneur. Jamais en entreprise.
+
+[server]
+hostname = "localhost"
+node_ip = "127.0.0.1"
+base_path = "https://$ref{server.hostname}:${carbon.management.port}"
+
+[super_admin]
+username = "admin"
+password = "admin"
+create_admin_account = true
+
+[user_store]
+type = "database_unique_id"
+
+[database.identity_db]
+type = "h2"
+url = "jdbc:h2:./repository/database/WSO2IDENTITY_DB;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=60000"
+username = "wso2carbon"
+password = "wso2carbon"
+
+[database.shared_db]
+type = "h2"
+url = "jdbc:h2:./repository/database/WSO2SHARED_DB;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=60000"
+username = "wso2carbon"
+password = "wso2carbon"
+
+[datasource.AgentIdentity]
+id = "AgentIdentity"
+url = "jdbc:h2:./repository/database/WSO2AGENTIDENTITY_DB;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=60000"
+username = "wso2carbon"
+password = "wso2carbon"
+driver = "org.h2.Driver"
+
+[keystore.primary]
+file_name = "wso2carbon.p12"
+password = "wso2carbon"
+type="PKCS12"
+
+[truststore]
+file_name="client-truststore.p12"
+password="wso2carbon"
+type="PKCS12"
+
+[account_recovery.endpoint.auth]
+hash= "66cd9688a2ae068244ea01e70f0e230f5623b7fa4cdecb65070a09ec06452262"
+
+[identity.auth_framework.endpoint]
+app_password= "dashboard"
+
+# The KeyStore which is used for encrypting/decrypting internal data. By default the primary keystore is used as the internal keystore.
+
+#[keystore.internal]
+#file_name = "$ref{keystore.primary.file_name}"
+#type = "$ref{keystore.primary.type}"
+#password = "$ref{keystore.primary.password}"
+#alias = "$ref{keystore.primary.alias}"
+#key_password = "$ref{keystore.primary.key_password}"
+
+# The KeyStore which is used for tls communication. By default the primary keystore is used as the tls keystore.
+
+#[keystore.tls]
+#file_name = "$ref{keystore.primary.file_name}"
+#type = "$ref{keystore.primary.type}"
+#password = "$ref{keystore.primary.password}"
+#alias = "$ref{keystore.primary.alias}"
+#key_password = "$ref{keystore.primary.key_password}"
+
+#Google reCAPTCHA settings.
+
+#[recaptcha]
+#enabled = true
+#api_url = "https://www.google.com/recaptcha/api.js"
+#verify_url = "https://www.google.com/recaptcha/api/siteverify"
+#site_key = ""
+#secret_key = ""
+
+# SMTP email sender settings.
+#[output_adapter.email]
+#from_address= "abcd@gmail.com"
+#username= "abcd"
+#password= "xxxx"
+#hostname= "smtp.gmail.com"
+#port= 587
+
+# lab08 (1) : IS est publie sur le port 9445 du poste (mapping 9445:9443 du compose). Les
+# adresses qu'il annonce - emetteur des jetons, JWKS, configuration OpenID - portent ce
+# port : emetteur https://localhost:9445/oauth2/token, distinct du Key Manager resident.
+[transport.https.properties]
+proxyPort = 9445
+
+# lab08 (2) : le lab demande invoices:read / invoices:write directement au point
+# d'entree token d'IS (client_credentials) ; IS doit les accorder sans ressource d'API.
+[oauth]
+authorize_all_scopes = true
+drop_unregistered_scopes = false

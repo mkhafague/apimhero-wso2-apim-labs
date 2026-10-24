@@ -1,0 +1,9 @@
+# Per-environment values - lab 5 (format verified: apictl 4.7.0 docs, --params option).
+# The API contract never changes; only these values do, per environment.
+# No secrets here: addresses only. Secrets live in the pipeline vault.
+environments:
+  - name: staging
+    configs:
+      endpoints:
+        production:
+          url: 'http://petstore-staging:8080'

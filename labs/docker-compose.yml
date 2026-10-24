@@ -1,0 +1,112 @@
+# Single lab stack - WSO2 API Management training ("La Mission").
+# One stack, driven by PROFILES, growing module after module:
+#
+#   docker compose --profile core up -d                                # lab 1  : API Manager only
+#   docker compose --profile core --profile apps up -d                 # labs 2-4 : + sample backends
+#   docker compose --profile core --profile apps --profile staging up -d           # lab 5 : + staging environment
+#   docker compose --profile core --profile apps --profile iam up -d               # lab 8 : + Identity Server
+#   docker compose --profile core --profile apps --profile integration up -d       # lab 9 : + Micro Integrator + legacy
+#
+# Recommended memory: 8 GB (core+apps) - 12 GB (+staging or +iam) - 16 GB (full stack).
+# Versions verified against official sources (Docker Hub wso2, docs 4.7.0 / IS 7.2.0 / MI 4.6.0).
+# Comments stay in English: this file is shared by the FR/EN/ES editions of the course.
+
+name: wso2-training
+
+services:
+  # ---------------------------------------------------------------- core ----
+  wso2am:
+    image: wso2/wso2am:4.7.0
+    container_name: wso2am
+    profiles: ["core"]
+    ports:
+      - "9443:9443"   # Management console /carbon, Publisher /publisher, Dev Portal /devportal (HTTPS)
+      - "8243:8243"   # Gateway HTTPS
+      - "8280:8280"   # Gateway HTTP (local tests only)
+    # Startup time varies by machine. Follow it with:  docker compose logs -f wso2am  (ready at 'WSO2 Carbon started in N sec')
+    # Labs 6 and 7 add optional config mounts (Moesif: deployment.toml, correlation logs:
+    # startup script) - see each lab guide.
+
+  # ------------------------------------------------------------- staging ----
+  # Second API Manager = the staging environment of lab 5.
+  # Its ports are "offset by one" (9444/8244/8281) by the server itself ([server] offset = 1
+  # in staging/deployment.toml), not only by Docker port mapping: the Publisher builds its
+  # OAuth redirect and the displayed gateway addresses from its own port, so a plain
+  # 9444->9443 mapping sent the browser to https://localhost:9443 (the dev platform), which
+  # does not know the staging Publisher's application (seen 2026-10-18).
+  wso2am-staging:
+    image: wso2/wso2am:4.7.0
+    container_name: wso2am-staging
+    profiles: ["staging"]
+    ports:
+      - "9444:9444"
+      - "8244:8244"
+      - "8281:8281"
+    volumes:
+      - ./staging/deployment.toml:/home/wso2carbon/wso2am-4.7.0/repository/conf/deployment.toml:ro
+
+  petstore-staging:
+    build: ../apps/petstore
+    container_name: petstore-staging
+    profiles: ["staging"]
+    ports:
+      - "8083:8080"
+    environment:
+      PORT: "8080"
+    # Staging endpoint (api_params.yaml of lab 5): http://petstore-staging:8080
+
+  # ---------------------------------------------------------------- apps ----
+  petstore:
+    build: ../apps/petstore
+    container_name: petstore
+    profiles: ["apps"]
+    ports:
+      - "8081:8080"   # direct access (diagnostics): http://localhost:8081
+    environment:
+      PORT: "8080"
+    # Endpoint to declare in the Publisher: http://petstore:8080
+
+  invoices:
+    build: ../apps/invoices
+    container_name: invoices
+    profiles: ["apps"]
+    ports:
+      - "8082:8080"   # direct access (diagnostics): http://localhost:8082
+    environment:
+      PORT: "8080"
+    # Endpoint to declare in the Publisher: http://invoices:8080
+
+  # ----------------------------------------------------------------- iam ----
+  wso2is:
+    image: wso2/wso2is:7.2.0    # version paired with APIM 4.7.0 (compatibility matrix)
+    container_name: wso2is
+    profiles: ["iam"]
+    ports:
+      - "9445:9443"   # IS console: https://localhost:9445/console
+    volumes:
+      # Lab 8 IS configuration (image file + 2 additions, see its header): token issuer
+      # https://localhost:9445/oauth2/token (distinct from the APIM resident Key Manager,
+      # which also issues with localhost:9443) and scopes granted at the token endpoint.
+      - ./lab08_identity_server/is-deployment.toml:/home/wso2carbon/wso2is-7.2.0/repository/conf/deployment.toml:ro
+
+  # --------------------------------------------------------- integration ----
+  wso2mi:
+    image: wso2/wso2mi:4.6.0
+    container_name: wso2mi
+    profiles: ["integration"]
+    ports:
+      - "8290:8290"   # HTTP transport (exposed facades)
+      - "9164:9164"   # management API
+    volumes:
+      # Lab 9 legacy facade (Synapse artifact) - path to confirm on first start
+      # (see labs/lab09_micro_integrator/README.md, Deployment section):
+      - ./mi/synapse-configs/api:/home/wso2carbon/wso2mi-4.6.0/repository/deployment/server/synapse-configs/default/api
+
+  legacy-mock:
+    build: ../apps/legacy-mock
+    container_name: legacy-mock
+    profiles: ["integration"]
+    ports:
+      - "9091:8080"   # raw GestPrest dialect: http://localhost:9091/GESTPREST/RMBT?id=1042
+    environment:
+      PORT: "8080"

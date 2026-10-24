@@ -1,0 +1,8 @@
+# secrets et état local des labs
+labs/.env
+apis/tests/env.gateway.json
+apis/tests/results.json
+node_modules/
+/Petstore/
+/Invoices/
+.DS_Store

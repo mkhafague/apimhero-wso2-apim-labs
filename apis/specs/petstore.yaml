@@ -1,0 +1,292 @@
+openapi: 3.0.3
+info:
+  title: Simple Petstore API
+  version: 1.0.0
+  description: |
+    Learning API for the "WSO2 API Management: The Mission" training course.
+    100% fictional dataset (a pet store) — chosen for the Cordelia prototype
+    at the DPO's request: no personal data, no risk.
+
+    Backend: apps/petstore (Node.js, dependency-free). Security (OAuth 2,
+    API Key, quotas) is enforced by the WSO2 gateway, not by the backend.
+  contact:
+    name: WSO2 APIM Training — The Mission
+  license:
+    name: MIT
+
+servers:
+  # NE PAS remettre l'URL de la passerelle ici. A l'import, WSO2 reprend le premier
+  # `servers` comme endpoint SANDBOX : la passerelle s'appelait donc elle-meme, et le
+  # try-out avec une cle Sandbox bouclait sans que rien ne l'explique a l'apprenant.
+  # Le contrat decrit le BACKEND, pas la facade qui l'expose.
+  - url: http://localhost:8081
+    description: Direct backend access (diagnostics only)
+
+security:
+  - OAuth2: [petstore:read]
+
+tags:
+  - name: pets
+    description: Store pet management
+
+paths:
+  /pets:
+    get:
+      tags: [pets]
+      operationId: listPets
+      summary: List all pets
+      security:
+        - OAuth2: [petstore:read]
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: List of the store's pets
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+              example:
+                - { id: 1, name: Rex, species: dog, status: available }
+                - { id: 4, name: Luna, species: cat, status: available }
+                - { id: 6, name: Coco, species: parrot, status: available }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      tags: [pets]
+      operationId: createPet
+      summary: Add a pet
+      security:
+        - OAuth2: [petstore:write]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPet'
+            example: { name: Filou, species: rabbit }
+      responses:
+        '201':
+          description: Pet created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+              example: { id: 7, name: Filou, species: rabbit, status: available }
+        '400':
+          description: Invalid request body (unreadable JSON, missing field or unknown species)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_PAYLOAD
+                message: "Field 'species' must be one of: dog, cat, parrot, rabbit, fish."
+                correlationId: 52c005cb-462f-4669-a999-78250ea1b48b
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /pets/{petId}:
+    get:
+      tags: [pets]
+      operationId: getPetById
+      summary: Get a pet by its identifier
+      security:
+        - OAuth2: [petstore:read]
+        - ApiKeyAuth: []
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          description: Numeric identifier of the pet
+          schema:
+            type: integer
+            minimum: 1
+          example: 6
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The requested pet
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+              example: { id: 6, name: Coco, species: parrot, status: available }
+        '404':
+          description: No pet with this identifier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PET_NOT_FOUND
+                message: No pet with id 99.
+                correlationId: b423eab5-3165-455f-8b09-5c2ab8197430
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /health:
+    get:
+      tags: [pets]
+      operationId: healthCheck
+      summary: Backend health status
+      description: Never affected by the simulated failure — serves as an availability probe.
+      security: []
+      responses:
+        '200':
+          description: The service responds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: UP }
+                  service: { type: string, example: petstore }
+
+components:
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: >
+        Correlation identifier provided by the caller. If absent, the backend
+        generates one. It is always returned in the response and logged at
+        every hop (gateway, backend).
+      schema:
+        type: string
+        example: test-abc-123
+
+  headers:
+    CorrelationId:
+      description: Correlation identifier of the request (propagated or generated)
+      schema:
+        type: string
+
+  schemas:
+    Pet:
+      type: object
+      required: [id, name, species, status]
+      properties:
+        id:
+          type: integer
+          description: Unique identifier
+          example: 6
+        name:
+          type: string
+          description: Pet's name
+          example: Coco
+        species:
+          type: string
+          description: Species
+          enum: [dog, cat, parrot, rabbit, fish]
+          example: parrot
+        status:
+          type: string
+          description: Availability in the store
+          enum: [available, pending, sold]
+          example: available
+
+    NewPet:
+      type: object
+      required: [name, species]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: Filou
+        species:
+          type: string
+          enum: [dog, cat, parrot, rabbit, fish]
+          example: rabbit
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable application error code (use it in tests)
+          example: PET_NOT_FOUND
+        message:
+          type: string
+          description: Human-readable message explaining the error and how to fix it
+          example: No pet with id 99.
+        correlationId:
+          type: string
+          description: Correlation identifier of the failed request
+          example: b423eab5-3165-455f-8b09-5c2ab8197430
+
+  responses:
+    Unauthorized:
+      description: Authentication missing, invalid or expired (issued by the gateway)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Missing or expired access token.
+    Forbidden:
+      description: Identity proven but insufficient rights — missing scope (issued by the gateway)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: The access token does not allow access to this resource.
+    TooManyRequests:
+      description: Plan rate limit reached (issued by the gateway)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: THROTTLED_OUT
+            message: Message throttled out. Retry later.
+    ServerError:
+      description: Internal backend error (e.g. the lab's simulated failure)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: STORAGE_FAILURE
+            message: Internal storage failure (simulated for training).
+
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      description: Client credentials flow — enforced by the WSO2 gateway
+      flows:
+        clientCredentials:
+          tokenUrl: https://localhost:9443/oauth2/token
+          scopes:
+            petstore:read: Read pets
+            petstore:write: Create or modify pets
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: apikey
+      description: WSO2 API Key (lightweight, read-only use cases)

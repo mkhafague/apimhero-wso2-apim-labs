@@ -1,0 +1,11 @@
+# Per-environment values - lab 10 (same format as lab 5: apictl 4.7.0 docs, --params option).
+# The API contract never changes; only these values do, per environment.
+# Without this file, the project keeps the placeholder backend written by `apictl init`
+# (http://localhost:8080), which the gateway container cannot reach.
+# No secrets here: addresses only. Secrets live in the pipeline vault.
+environments:
+  - name: dev
+    configs:
+      endpoints:
+        production:
+          url: 'http://invoices:8080'
